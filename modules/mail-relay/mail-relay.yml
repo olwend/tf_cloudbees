@@ -1,0 +1,195 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: 'GDC PCS LDAPS (1302) / MAIL RELAY (1306) VPC ENDPOINT'
+Mappings:
+  LdapsServices:
+    eu-west-1:
+      "ServiceId": "vpce-svc-0fa9a4cc9d333377a"
+    eu-west-2:
+      "ServiceId": "vpce-svc-0198cda8c279d18f2"
+    eu-central-1:
+      "ServiceId": "vpce-svc-02e851a4649edda02"
+  LdapsDnsTargets:
+    eu-west-1:
+      "Target": "ldaps-dub.internal.vodafone.com"
+    eu-west-2:
+      "Target": "ldaps-dub.internal.vodafone.com"
+    eu-central-1:
+      "Target": "ldaps-rat.internal.vodafone.com"
+
+
+  MailRelayServices:
+    eu-west-1:
+      "ServiceId": "vpce-svc-0eb3647507744982a"
+    eu-west-2:
+      "ServiceId": "vpce-svc-0305eee858e0f7e7c"
+    eu-central-1:
+      "ServiceId": "vpce-svc-0f25e385fe87fb7bd"
+  MailRelayDnsTargets:
+    eu-west-1:
+      "Target": "appsmtp-north.internal.vodafone.com"
+    eu-west-2:
+      "Target": "appsmtp-north.internal.vodafone.com"
+    eu-central-1:
+      "Target": "appsmtp-north.internal.vodafone.com"
+
+Parameters:
+
+  ProductCode:
+    Type: String
+    Description: Product code of the endpoint to be created
+    AllowedValues:
+      - '1302' # LDAPS
+      - '1306' # Mail Relay
+
+  VPC:
+    Type:  AWS::EC2::VPC::Id
+    ConstraintDescription: VPC in which the endpoint will be deployed
+  TrustedCidrBlock:
+    Type:  String
+    Description: Cidr block of the source traffic for the LDAPS endpoint
+    ConstraintDescription: Follow principle of least privilege - limiting access only to those instances which require it
+
+  # Each subnet must belong to a different availability zone within the AWS region within the given VPC
+  Subnet:
+    Type: AWS::EC2::Subnet::Id
+    ConstraintDescription: Subnet ID must exist in the chosen VPC. If region is euwe1, AZ id of this subnet must be euw1-az1
+#  SubnetB:
+#    Type: AWS::EC2::Subnet::Id
+#    ConstraintDescription: Subnet ID must exist in the chosen VPC. If region is euwe1, AZ id of this subnet must be euw1-az2
+#  SubnetC:
+#    Type: String
+#    ConstraintDescription: Subnet ID must exist in the chosen VPC. Skip this parameter if requesting in eu-west-1
+#    Default: ''
+
+  HostedZoneId:
+    Type: String
+    Description: Supply hosted zone id if the VPC already has a private hosted zone for "internal.vodafone.com" otherwise skip
+    ConstraintDescription: This can be common if you are requesting LDAPS for a VPC which already has VF Mail Relay and vice-versa
+    Default: ''
+
+Conditions:
+  CreateNewHostedZone: !Equals [ '', !Ref 'HostedZoneId' ]
+  IsLDAPsRequest: !Equals [ '1302', !Ref 'ProductCode' ]
+  IsMailRelayRequest: !Equals [ '1306', !Ref 'ProductCode' ]
+  IsTwoAzEndpointService: !Equals [ 'eu-west-1', !Ref 'AWS::Region' ]
+
+Resources:
+
+  VpcEndpointSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: VF VPC endpoint SG
+      VpcId: !Ref VPC
+      SecurityGroupIngress: []
+
+  LdapsIngressA:
+    Condition: IsLDAPsRequest
+    Type: 'AWS::EC2::SecurityGroupIngress'
+    Properties:
+      GroupId: !Ref VpcEndpointSecurityGroup
+      IpProtocol: tcp
+      FromPort: '636'
+      ToPort: '636'
+      CidrIp: !Ref TrustedCidrBlock
+      Description: VF LDAPS ingress
+  LdapsIngressB:
+    Condition: IsLDAPsRequest
+    Type: 'AWS::EC2::SecurityGroupIngress'
+    Properties:
+      GroupId: !Ref VpcEndpointSecurityGroup
+      IpProtocol: tcp
+      FromPort: '3269'
+      ToPort: '3269'
+      CidrIp: !Ref TrustedCidrBlock
+      Description: VF LDAPS ingress
+
+  MailRelayIngress:
+    Condition: IsMailRelayRequest
+    Type: 'AWS::EC2::SecurityGroupIngress'
+    Properties:
+      GroupId: !Ref VpcEndpointSecurityGroup
+      IpProtocol: tcp
+      FromPort: '25'
+      ToPort: '25'
+      CidrIp: !Ref TrustedCidrBlock
+      Description: VF Mail Relay ingress
+
+  LdapsVpcEndpoint:
+    Condition: IsLDAPsRequest
+    Type: 'AWS::EC2::VPCEndpoint'
+    Properties:
+      SecurityGroupIds:
+        - !GetAtt VpcEndpointSecurityGroup.GroupId
+      VpcEndpointType: Interface
+      SubnetIds:
+        - !Ref Subnet
+      ServiceName: !Join
+        - ''
+        - - 'com.amazonaws.vpce.'
+          - !Ref 'AWS::Region'
+          - '.'
+          - !FindInMap [LdapsServices, !Ref "AWS::Region", ServiceId]
+      VpcId: !Ref VPC
+
+  MailRelayVpcEndpoint:
+    Condition: IsMailRelayRequest
+    Type: 'AWS::EC2::VPCEndpoint'
+    Properties:
+      SecurityGroupIds:
+        - !GetAtt VpcEndpointSecurityGroup.GroupId
+      VpcEndpointType: Interface
+      SubnetIds:
+        - !Ref Subnet
+      ServiceName: !Join
+        - ''
+        - - 'com.amazonaws.vpce.'
+          - !Ref 'AWS::Region'
+          - '.'
+          - !FindInMap [MailRelayServices, !Ref "AWS::Region", ServiceId]
+      VpcId: !Ref VPC
+
+  InternalVfHostedZone:
+    Condition: CreateNewHostedZone
+    Type: "AWS::Route53::HostedZone"
+    Properties:
+      HostedZoneConfig:
+        Comment: "Private DNS for VF on-premise services such as LDAPS or Mail Relay"
+      Name: "internal.vodafone.com"
+      VPCs:
+        -
+          VPCId: !Ref VPC
+          VPCRegion: !Ref 'AWS::Region'
+
+  LdapsRecordSet:
+    Condition: IsLDAPsRequest
+    Type: AWS::Route53::RecordSet
+    Properties:
+      HostedZoneId: !If [CreateNewHostedZone, !Ref 'InternalVfHostedZone', !Ref "HostedZoneId"]
+      Name: !FindInMap [ LdapsDnsTargets, !Ref "AWS::Region", Target ]
+      Type: A
+      AliasTarget:
+        DNSName: !Select [1, !Split [":", !Select [ "0", !GetAtt LdapsVpcEndpoint.DnsEntries ] ]]
+        HostedZoneId: !Select [0, !Split [":", !Select [ "0", !GetAtt LdapsVpcEndpoint.DnsEntries ] ]]
+
+  MailRelayRecordSet:
+    Condition: IsMailRelayRequest
+    Type: AWS::Route53::RecordSet
+    Properties:
+      HostedZoneId: !If [CreateNewHostedZone, !Ref 'InternalVfHostedZone', !Ref "HostedZoneId"]
+      Name: !FindInMap [ MailRelayDnsTargets, !Ref "AWS::Region", Target ]
+      Type: A
+      AliasTarget:
+        DNSName: !Select [1, !Split [":", !Select [ "0", !GetAtt MailRelayVpcEndpoint.DnsEntries ] ]]
+        HostedZoneId: !Select [0, !Split [":", !Select [ "0", !GetAtt MailRelayVpcEndpoint.DnsEntries ] ]]
+
+Outputs:
+
+  Region:
+    Description: The region in which the VPC endpoint has been created. To be supplied in SC Approval Form request
+    Value: !Ref 'AWS::Region'
+  EndpointId:
+    Description: The id of the created VPC endpoint. To be supplied in SC Approval Form request
+    Value: !If [IsLDAPsRequest, !Ref 'LdapsVpcEndpoint', !Ref "MailRelayVpcEndpoint"]
+  HostedZoneId:
+    Description: The id of the private hosted zone in Route53 for the VPC
+    Value: !If [CreateNewHostedZone, !Ref 'InternalVfHostedZone', !Ref "HostedZoneId"]

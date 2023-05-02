@@ -1,0 +1,98 @@
+
+# AWSTemplateFormatVersion: "2010-09-09"
+# Description: "DLM Policy for mpesa-nap instances"
+
+# Parameters:
+#   ProjectName:
+#     Type: String
+#     Description: The project associated with the policy. Defined within .tfvars and variables.tf.
+#   ExecRoleArn:
+#     Type: String
+#     Description: Execution Role ARN for DLM to work.
+
+# Resources:
+#   DLMLifecyclePolicyVolume:
+#     Type: "AWS::DLM::LifecyclePolicy"
+#     Properties:
+#       Description: !Sub "DLM Policy for ${ProjectName} with VOLUME resource type"
+#       State: "ENABLED"
+#       ExecutionRoleArn: !Ref ExecRoleArn
+#       PolicyDetails:
+#         ResourceTypes:
+#           - "VOLUME"
+#         TargetTags:
+#           -
+#             Key: "Name"
+#             Value: !Sub "${ProjectName}-NAP_Windows-root-volume"
+#           -
+#             Key: "Name"
+#             Value: !Sub "${ProjectName}-DB_Mongo-root-volume"
+#           -
+#             Key: "Name"
+#             Value: !Sub "${ProjectName}-DB_Oracle-root-volume"
+#           -
+#             Key: "Name"
+#             Value: !Sub "${ProjectName}-MFT_NAP-root-volume"
+#           -
+#             Key: "Name"
+#             Value: !Sub "${ProjectName}-APP_ACM-root-volume"
+#           -
+#             Key: "Name"
+#             Value: !Sub "${ProjectName}-APP_Management-root-volume"
+#           -
+#             Key: "Name"
+#             Value: !Sub "${ProjectName}-APP_AMLKYC-root-volume"
+#           -
+#             Key: "Name"
+#             Value: !Sub "${ProjectName}-DB-RCC-root-volume"
+#           -
+#             Key: "Name"
+#             Value: !Sub "${ProjectName}-DB_Mongo-sdb-volume"
+#           -
+#             Key: "Name"
+#             Value: !Sub "${ProjectName}-DB_Mongo-sdc-volume"
+#           -
+#             Key: "Name"
+#             Value: !Sub "${ProjectName}-DB_Oracle-sdb-volume"
+#           -
+#             Key: "Name"
+#             Value: !Sub "${ProjectName}-DB_Oracle-sdc-volume"
+#           -
+#             Key: "Name"
+#             Value: !Sub "${ProjectName}-DB_Oracle-sdd-volume"
+#           -
+#             Key: "Name"
+#             Value: !Sub "${ProjectName}-DB_Oracle-sde-volume"
+#           -
+#             Key: "Name"
+#             Value: !Sub "${ProjectName}-DB_Oracle-sdf-volume"
+#           -
+#             Key: "Name"
+#             Value: !Sub "${ProjectName}-MFT_NAP-sdb-volume"
+#           -
+#             Key: "Name"
+#             Value: !Sub "${ProjectName}-MFT_NAP-sdc-volume"
+#           -
+#             Key: "Name"
+#             Value: !Sub "${ProjectName}-APP_ACM-sdb-volume"
+#           -
+#             Key: "Name"
+#             Value: !Sub "${ProjectName}-APP_AMLKYC-sdb-volume"
+#           -
+#             Key: "Name"
+#             Value: !Sub "${ProjectName}-APP_AMLKYC-sdf-volume"
+#           -
+#             Key: "Name"
+#             Value: !Sub "${ProjectName}-DB-RCC-sdb-volume"
+
+#         Schedules:
+#           -
+#             Name: !Sub "24 hour daily snapshots for ${ProjectName} taken at 11pm"
+#             CreateRule:
+#               Interval: 24
+#               IntervalUnit: "HOURS"
+#               Times:
+#                 - "23:00"
+#             RetainRule:
+#               Count: 2
+#             CopyTags: true

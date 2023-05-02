@@ -1,0 +1,183 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: 'mpesa-g2-test - VPC Endpoints'
+Mappings: 
+  Trend: 
+    eu-west-1: 
+      "ServiceId": "vpce-svc-021ea81a4876d04a1" 
+    eu-west-2:
+      "ServiceId": "vpce-svc-0370ca0f96da7ae00" 
+    eu-central-1: 
+      "ServiceId": "vpce-svc-04995ddbf25c34631" 
+
+Parameters: 
+
+  VPC:
+    Type: AWS::EC2::VPC::Id
+    ConstraintDescription: G2 Test VPC
+    
+  VPCCidrBlock:
+    Type: String
+    ConstraintDescription: VPC Cidr Block
+
+  PublicSubnetA:
+    Type: AWS::EC2::Subnet::Id
+    ConstraintDescription: Subnet ID must exist in the chosen VPC (Public)
+  
+  PrivateSubnetA:
+    Type: AWS::EC2::Subnet::Id
+    ConstraintDescription: Subnet ID must exist in the chosen VPC (Private)
+
+  PrivateSubnetB:
+    Type: AWS::EC2::Subnet::Id
+    ConstraintDescription: Subnet ID must exist in the chosen VPC (Private)
+
+  PublicSubnetRouteTable:
+    Type: String
+    ConstraintDescription: Subnet Route Table must be associated in the chosen VPC (Public)
+    
+  PrivateSubnetRouteTable:
+    Type: String
+    ConstraintDescription: Subnet Route Table must be associated in the chosen VPC (Private)    
+  
+
+Resources:
+  VpcEndpointSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Trend Micro Interface endpoint SG DO-NOT-MODIFY
+      VpcId: !Ref VPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 4122
+          ToPort: 4122
+          CidrIp: !Ref VPCCidrBlock
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: !Ref VPCCidrBlock
+        - IpProtocol: tcp
+          FromPort: 5274
+          ToPort: 5274
+          CidrIp: !Ref VPCCidrBlock
+        - IpProtocol: tcp
+          FromPort: 4120
+          ToPort: 4120
+          CidrIp: !Ref VPCCidrBlock
+        - IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          CidrIp: !Ref VPCCidrBlock
+      Tags:
+        -
+          Key: Name
+          Value: mpesa-nap-vpc-endpoints-sg
+        -
+          Key: SecurityZone
+          Value: X2
+  
+  S3Endpoint:
+    Type: 'AWS::EC2::VPCEndpoint'
+    Properties:
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal: '*'
+            Action: '*'
+            Resource: '*'
+      RouteTableIds:
+        - !Ref PublicSubnetRouteTable
+        - !Ref PrivateSubnetRouteTable
+      ServiceName: !Sub "com.amazonaws.${AWS::Region}.s3"
+      VpcId: !Ref VPC
+      
+  SSMEndpoint:
+    Type: 'AWS::EC2::VPCEndpoint'
+    Properties:
+      SecurityGroupIds:
+        - !GetAtt VpcEndpointSecurityGroup.GroupId
+      VpcEndpointType: Interface
+      PrivateDnsEnabled: true
+      SubnetIds:
+        - !Ref PublicSubnetA
+        - !Ref PrivateSubnetA
+        - !Ref PrivateSubnetB
+      ServiceName: !Sub "com.amazonaws.${AWS::Region}.ssm"
+      VpcId: !Ref VPC
+      
+  EC2MessagesEndpoint:
+    Type: 'AWS::EC2::VPCEndpoint'
+    Properties:
+      SecurityGroupIds:
+        - !GetAtt VpcEndpointSecurityGroup.GroupId
+      VpcEndpointType: Interface
+      PrivateDnsEnabled: true
+      SubnetIds:
+        - !Ref PublicSubnetA
+        - !Ref PrivateSubnetA
+        - !Ref PrivateSubnetB
+      ServiceName: !Sub "com.amazonaws.${AWS::Region}.ec2messages" 
+      VpcId: !Ref VPC
+      
+  SSMMessagesEndpoint:
+    Type: 'AWS::EC2::VPCEndpoint'
+    Properties:
+      SecurityGroupIds:
+        - !GetAtt VpcEndpointSecurityGroup.GroupId
+      VpcEndpointType: Interface
+      PrivateDnsEnabled: true
+      SubnetIds:
+        - !Ref PublicSubnetA
+        - !Ref PrivateSubnetA
+        - !Ref PrivateSubnetB
+      ServiceName: !Sub "com.amazonaws.${AWS::Region}.ssmmessages" 
+      VpcId: !Ref VPC
+  
+  TrendEndpoint:
+    Type: 'AWS::EC2::VPCEndpoint'
+    Properties:
+      SecurityGroupIds: 
+        - !GetAtt VpcEndpointSecurityGroup.GroupId
+      VpcEndpointType: Interface
+      SubnetIds:
+        - !Ref PublicSubnetA
+        - !Ref PrivateSubnetA
+        - !Ref PrivateSubnetB
+      ServiceName: !Join
+        - ''
+        - - 'com.amazonaws.vpce.'
+          - !Ref 'AWS::Region'
+          - '.'
+          - !FindInMap [Trend, !Ref "AWS::Region", ServiceId]
+      VpcId: !Ref VPC
+  
+  TrendPrivateHostedZone: 
+    Type: "AWS::Route53::HostedZone"
+    Properties: 
+      HostedZoneConfig: 
+        Comment: "Trend Micro Private DNS"
+      Name: "aws-shared.vodafone.com"
+      VPCs: 
+        - 
+          VPCId: !Ref VPC
+          VPCRegion: !Ref 'AWS::Region'
+
+  DsmRecordSet:
+    Type: AWS::Route53::RecordSet
+    Properties:
+      HostedZoneId: !Ref TrendPrivateHostedZone
+      Name: trend-dsm.aws-shared.vodafone.com.
+      Type: CNAME
+      TTL: '300'
+      ResourceRecords:
+      - !Select [1, !Split [":", !Select [ "0", !GetAtt TrendEndpoint.DnsEntries ] ]]  
+  
+  SpsRecordSet:
+    Type: AWS::Route53::RecordSet
+    Properties:
+      HostedZoneId: !Ref TrendPrivateHostedZone
+      Name: trend-sps.aws-shared.vodafone.com.
+      Type: CNAME
+      TTL: '300'
+      ResourceRecords:
+      - !Select [1, !Split [":", !Select [ "0", !GetAtt TrendEndpoint.DnsEntries ] ]]
